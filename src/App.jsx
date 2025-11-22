@@ -251,9 +251,23 @@ const countServiceEvents = (points) => {
     return count;
 };
 
+const countInfractions = (points) => {
+    let count = 0;
+    let inInfraction = false;
+    points.forEach(p => {
+        if (p.speed > 80 && !inInfraction) {
+            count++;
+            inInfraction = true;
+        } else if (p.speed <= 80) {
+            inInfraction = false;
+        }
+    });
+    return count;
+};
+
 const generateStats = (pipaId, mode, dayIdx, data) => {
     try {
-        if (!data || !data[pipaId]) return { km: 0, valves: 0, maxSpeed: 0, efficiency: 0 };
+        if (!data || !data[pipaId]) return { km: 0, valves: 0, maxSpeed: 0, efficiency: 0, infractions: 0 };
 
         let points = [];
         if (mode === 'daily') {
@@ -286,6 +300,7 @@ const generateStats = (pipaId, mode, dayIdx, data) => {
         }
 
         const serviceEvents = countServiceEvents(points);
+        const infractions = countInfractions(points);
         const maxSpeed = points.reduce((max, p) => (p && p.speed > max) ? p.speed : max, 0);
         const days = mode === 'daily' ? 1 : (Object.keys(data[pipaId]).length || 1);
         const efficiency = totalKm > 0 ? (serviceEvents / days / (totalKm / days / 10)).toFixed(2) : 0;
@@ -294,11 +309,12 @@ const generateStats = (pipaId, mode, dayIdx, data) => {
             km: Math.round(totalKm),
             valves: serviceEvents,
             maxSpeed,
-            efficiency
+            efficiency,
+            infractions
         };
     } catch (error) {
         console.error("Error in generateStats:", error);
-        return { km: 0, valves: 0, maxSpeed: 0, efficiency: 0 };
+        return { km: 0, valves: 0, maxSpeed: 0, efficiency: 0, infractions: 0 };
     }
 };
 
@@ -334,7 +350,7 @@ const UnitCard = ({ id, name, color, visible, toggle, stats, mode, tab, alert })
                 {tab === 'safety' && (
                     <>
                         <StatRow label="Vel. Máx" value={`${stats.maxSpeed} km/h`} alert={stats.maxSpeed > 80} />
-                        <StatRow label="Infracciones" value={mode === 'period' ? Math.round(stats.km * 0.02) : (stats.maxSpeed > 80 ? 1 : 0)} />
+                        <StatRow label="Infracciones" value={stats.infractions} />
                     </>
                 )}
                 {tab === 'commercial' && (
@@ -544,10 +560,12 @@ function UbiSmartSimulatorV3() {
                     visiblePoints.forEach(p => {
                         // Alerta en Mapa: Coincidir color con Timeline (Rojo)
                         if (activeTab === 'safety' && p.speed > 80) {
-                            L.circleMarker([p.lat, p.lon], { radius: 4, color: 'black', fillColor: '#dc2626', fillOpacity: 1 }).addTo(map);
+                            const m = L.circleMarker([p.lat, p.lon], { radius: 4, color: 'black', fillColor: '#dc2626', fillOpacity: 1 }).addTo(map);
+                            layersRef.current.markers.push(m);
                         }
                         if (activeTab === 'commercial' && p.valve) {
-                            L.circleMarker([p.lat, p.lon], { radius: 3, color: 'transparent', fillColor: '#10b981', fillOpacity: 0.8 }).addTo(map);
+                            const m = L.circleMarker([p.lat, p.lon], { radius: 4, color: 'white', weight: 1, fillColor: '#F59E0B', fillOpacity: 1 }).addTo(map);
+                            layersRef.current.markers.push(m);
                         }
                     });
                 }
@@ -585,10 +603,12 @@ function UbiSmartSimulatorV3() {
                     if (!pts) return;
                     pts.forEach(p => {
                         if (activeTab === 'commercial' && p.valve) {
-                            L.circleMarker([p.lat, p.lon], { radius: 2, stroke: false, fillColor: geoConf.color, fillOpacity: 0.3 }).addTo(map);
+                            const m = L.circleMarker([p.lat, p.lon], { radius: 3, color: 'white', weight: 0.5, fillColor: '#F59E0B', fillOpacity: 0.8 }).addTo(map);
+                            layersRef.current.markers.push(m);
                         }
                         if (activeTab === 'safety' && p.speed > 80) {
-                            L.circleMarker([p.lat, p.lon], { radius: 3, stroke: false, fillColor: '#dc2626', fillOpacity: 0.5 }).addTo(map);
+                            const m = L.circleMarker([p.lat, p.lon], { radius: 3, stroke: false, fillColor: '#dc2626', fillOpacity: 0.5 }).addTo(map);
+                            layersRef.current.markers.push(m);
                         }
                     });
                 });
@@ -707,7 +727,7 @@ function UbiSmartSimulatorV3() {
                         <h5 className="font-bold text-slate-700 border-b pb-1 mb-2">Simbología ({activeTab === 'safety' ? 'Auditoría' : activeTab === 'commercial' ? 'Comercial' : 'Operativa'})</h5>
                         {activeTab === 'operations' && (
                             <>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-full border border-white shadow-sm"></div> Válvula Abierta (Venta)</div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500 rounded-full border border-white shadow-sm"></div> Válvula Abierta (Venta)</div>
                                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div> En Traslado</div>
                                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600 rounded-sm"></div> Alerta / Exceso Vel.</div>
                                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-300 rounded-sm"></div> Detenido / T. Muerto</div>
@@ -721,7 +741,7 @@ function UbiSmartSimulatorV3() {
                         )}
                         {activeTab === 'commercial' && (
                             <>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 opacity-50 rounded-full"></div> Densidad de Venta</div>
+                                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500 opacity-50 rounded-full"></div> Densidad de Venta</div>
                                 {viewMode === 'period' && <div className="text-[10px] text-slate-500 mt-1 italic">Modo Tendencia: Muestra acumulado</div>}
                             </>
                         )}
